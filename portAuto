@@ -42,6 +42,7 @@
 #       2.0 - rewritten using eAPI
 #       3.0 - added show lldp neighbors detail
 #       3.1 - added unix socket support
+#       3.2 - added description prepending with "not in use" string for neighborless interfaces
 
 
 """
@@ -65,6 +66,8 @@
          - if you are running a version of EOS that support unix socket
            connections, then simply use TRANSPORT='socket'. The remaining
            credentials will be ignored.
+         - in order to prepend a string to interfaces that are down/not in use,
+           edit NIU=''.  Note: leading whitespace is removed by EOS.
 
       portAuto can then be started using any of the following methods:
 
@@ -103,7 +106,7 @@
       backward compatibility with future EOS releases.
 
   LIMITATIONS
-      None known.
+      Multiple LLDP neighbors will result in a description containing the last neighbor to be read.
 """
 
 import jsonrpclib
@@ -115,6 +118,7 @@ import re
 # Configuration section
 #----------------------------------------------------------------
 TRANSPORT = 'socket'
+NIU = ''
 
 # These are not required if using socket
 SWITCH_IP = '127.0.0.1'
@@ -169,7 +173,7 @@ def get_lldp_info(eapi):
     for intf in local_interfaces:
         # Run lldp neighbors detail against specific interfaces to limit output
         raw_detail = _get_lldp_detail(eapi, intf)
-        # Remove the first item in the array - useless info
+        # Remove the first nbrEntry in the array - useless info
         unique_neighbors = raw_detail.split('\n\n')[1:]
 
         # Look through all of the raw output and scrape.
@@ -191,6 +195,22 @@ def _get_local_interfaces(eapi):
     neighbors = output['lldpNeighbors']
     out = [x['port'] for x in neighbors]
     return list(set(out))
+
+def get_all_local_interfaces(eapi):
+    '''Look at all interfaces for the "not in use" feature.
+       Only add ethernet or management interfaces to the list, not port-channels or VLAN intfs,
+       as these don't run LLDP anyway.
+       Return a dictionary of interfaces and descriptions.
+    '''
+    output = run_cmds(eapi, ['show interfaces description'], format='json')[0]
+    interfaces = output['interfaceDescriptions']
+    out = dict()
+    for x in interfaces.iterkeys() :
+        # find anything that is not a front-panel intf
+        if (x.find('Management') >= 0 or x.find('Ethernet') >= 0) :
+            out[x] = interfaces[x]['description']
+
+    return out
 
 def _get_lldp_detail(eapi, intf):
     return run_cmds(eapi, ['show lldp neighbors %s detail' % intf],
@@ -274,17 +294,34 @@ def main():
 
     eapi = setup_eapi_connection()
     neighbors = get_lldp_info(eapi)
-
     log(neighbors)
 
-    for i in neighbors:
-        localIntf = i['port']
-        intfDesc = '*** Link to %s(%s)' % (i['neighborDevice'],
-                                           i['neighborPort'])
-        rc = run_cmds(eapi, ['enable',
-                             'configure',
-                             'interface %s' % localIntf,
-                             'description %s' % intfDesc])
+    allFpIntfs = get_all_local_interfaces(eapi)
+    log(allFpIntfs)
+
+    for i in allFpIntfs.iterkeys() :
+        # A frontpanel interface with an LLDP neighbor
+        if [ nbrEntry for nbrEntry in neighbors if nbrEntry['port'] == i ] :
+            intfDesc = '*** Link to %s(%s)' % (nbrEntry['neighborDevice'],
+                                               nbrEntry['neighborPort'])
+            rc = run_cmds(eapi, ['enable',
+                                 'configure',
+                                 'interface %s' % i,
+                                 'description %s' % intfDesc])
+        else :
+            # A frontpanel interface without an LLDP neighbor (including link down)
+            # Skip descriptions that already match the NIU string.  When NIU = '' this skips everything.
+            if NIU.lstrip() in allFpIntfs[i] :
+                continue
+            # Configure the new description, prepended with the NIU string
+            else :
+                newDesc = NIU.lstrip()+allFpIntfs[i]
+
+                rc = run_cmds(eapi, ['enable',
+                                    'configure',
+                                    'interface %s' % i,
+                                    'description %s' % newDesc])
+
 
 if __name__ == '__main__':
    main()
