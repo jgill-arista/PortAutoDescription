@@ -173,7 +173,7 @@ def get_lldp_info(eapi):
     for intf in local_interfaces:
         # Run lldp neighbors detail against specific interfaces to limit output
         raw_detail = _get_lldp_detail(eapi, intf)
-        # Remove the first nbrEntry in the array - useless info
+        # Remove the first item in the array - useless info
         unique_neighbors = raw_detail.split('\n\n')[1:]
 
         # Look through all of the raw output and scrape.
