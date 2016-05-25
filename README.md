@@ -28,8 +28,12 @@ management api http-commands
 
 change SWITCH_IP, USERNAME and PASSWORD at the top of the
 script to the ones appropriate for your installation. If
+<<<<<<< e64f6f4349ae2388fcc041a57a59c254801692bf
 running locallty, use '127.0.0.1' for the IP. If using unix-sockets
 you do not need to worry about USERNAME and PASSWORD.
+=======
+running locally, use '127.0.0.1' for the IP.
+>>>>>>> noticed a limitation with multiple neighbors and made a note
 
 portAuto can then be started using any of the following methods:
 
@@ -110,7 +114,7 @@ is using the Command API interface. Hence, it should maintain
 backward compatibility with future EOS releases.
 
 ## LIMITATIONS
-None known.
+Multiple LLDP neighbors will result in a description containing the last neighbor to be read.
 
 ## LICENSE
 BSD-3, See LICENSE file
